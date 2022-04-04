@@ -1,0 +1,28 @@
+{
+  "name": "dxf-handler",
+  "version": "1.0.0",
+  "description": "Analyze DXF file and convert to SVG",
+  "main": "src/dxf-handler.ts",
+  "scripts": {
+    "start": "ts-node src/dxf-handler.ts -test",
+    "test": "ts-node src/dxf-handler.ts -test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/romannep/dxf-handler.git"
+  },
+  "author": "Roman Nep (neproman@gmail.com)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/romannep/dxf-handler/issues"
+  },
+  "homepage": "https://github.com/romannep/dxf-handler#readme",
+  "dependencies": {
+    "@flatten-js/core": "1.2.20",
+    "dxf-parser": "1.0.0-alpha.2"
+  },
+  "devDependencies": {
+    "@types/node": "14.14.31",
+    "typescript": "4.2.2"
+  }
+}
