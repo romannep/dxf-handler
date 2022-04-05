@@ -37,11 +37,12 @@ async function readDxf(filePath: string): Promise<DxfData> {
   const content = await fs.readFile(filePath, { encoding: 'utf8' });
   try {
     const data = parser.parseSync(content);
-    if (data.tables?.layer?.layers) {
-      const mainLayer = Object.keys(data.tables.layer.layers)[0];
-      data.entities = data.entities.filter((entity: Entity) => entity.layer === mainLayer)
-        .filter(ent => !ent.inPaperSpace);
-    }
+    // TODO: how to find out main layer?
+    // if (data.tables?.layer?.layers) {
+    //   const mainLayer = Object.keys(data.tables.layer.layers)[0];
+    //   data.entities = data.entities.filter((entity: Entity) => entity.layer === mainLayer)
+    //     .filter(ent => !ent.inPaperSpace);
+    // }
     return data;
   } catch {
     return null;
@@ -55,7 +56,6 @@ function lineLength(p1: Vertice, p2: Vertice) {
 function calcEntityLength(entity: Entity) {
   switch (entity.type) {
     case 'ARC':
-      // console.log('ent', entity);
       let angle: number = entity.endAngle - entity.startAngle;
       if (angle < 0) {
         angle = 2 * Math.PI + angle;
@@ -63,7 +63,6 @@ function calcEntityLength(entity: Entity) {
       if (entity.clockwise) {
         angle = 2 * Math.PI - angle;
       }
-      // console.log('ang', angle);
       return angle * entity.radius;
     case 'LINE':
       return lineLength(entity.edges[0], entity.edges[1]);
@@ -108,10 +107,10 @@ interface Shape {
   start?: Vertice;
   end?: Vertice;
   perimeter?: number;
-  area?: number; // Площадь
-  main?: boolean; // Основная область
-  closed: boolean; // область закрыта
-  single: boolean; //область из одного примитива
+  area?: number;
+  main?: boolean; // is main area
+  closed: boolean; // is shape closed
+  single: boolean; //is shape formed by single entity
   polygon?: any,
   skippedIncludesCheck?: boolean;
 }
@@ -147,7 +146,7 @@ function cloneVertice(v: Vertice): Vertice {
   };
 }
 
-// разложим POLYLINE на отрезки и дуги
+// split POLYLINE to arcs and lines
 function transofrmEntity(entity: Entity): Entity[] {
   if (entity.type !== 'LWPOLYLINE') {
     return [entity];
@@ -346,7 +345,7 @@ function findMainShape(shapes: Shape[]): Shape {
         return;
       }
       if (!mainShape.polygon.contains(shape.polygon)) {
-        throw new Error('Не все контуры внутри основного');
+        throw new Error('Not all shapes inside main shape');
       }
       if (new Date().getTime() - started > MAIN_INCLUDES_CHECK_TIMEOUT) {
         throw new Error(CHECK_TIMEOUT_MESSAGE);
@@ -434,18 +433,6 @@ async function createSVG(filePath: string, shapes: Shape[], bounds: Rect) {
     shape.polygon = createPolygon(shape);
   });
 
-  // const boundsShape: Shape = {
-  //   entities: [
-  //     { type: 'LINE', edges: [{ x: 0, y: 0 }, { x: width, y: 0 }] },
-  //     { type: 'LINE', edges: [{ x: width, y: 0 }, { x: width, y: height }] },
-  //     { type: 'LINE', edges: [{ x: width, y: height }, { x: 0, y: height }] },
-  //     { type: 'LINE', edges: [{ x: 0, y: height }, { x: 0, y: 0 }] },
-  //   ],
-  //   closed: true,
-  //   single: false,
-  // };
-  // boundsShape.polygon = createPolygon(boundsShape);
-  // shapes.unshift(boundsShape);
   const viewBox: number = Math.ceil(Math.max(width, height));
   const dy: number = (viewBox - height) / 2;
   const dx: number = (viewBox - width) / 2
@@ -479,16 +466,16 @@ async function getFileData(filePath: string, svgPath?: string): Promise<FileData
     try {
       shape.polygon = createPolygon(shape);
     } catch (e) {
-      fileData.errors.push(`Контур ${index} имеет ошибки ${e.message}`);
+      fileData.errors.push(`Shape ${index} has errors ${e.message}`);
       return false
     }
     if (!shape.polygon.isValid()) {
-      fileData.errors.push(`Контур ${index} некорректен`);
+      fileData.errors.push(`Shape ${index} is invalid`);
     }
     try {
       shape.area = shape.polygon.area();
     } catch (e) {
-      fileData.errors.push(`Невозможно рассчитать площадь контура ${index}. ${e.message}`);
+      fileData.errors.push(`Can not compute area of the shape ${index}. ${e.message}`);
       return false;
     }
     try {
@@ -496,7 +483,7 @@ async function getFileData(filePath: string, svgPath?: string): Promise<FileData
         return acc + calcEntityLength(val);
       }, 0);
     } catch (e) {
-      fileData.errors.push(`Невозможно рассчитать периметр контура ${index}. ${e.message}`);
+      fileData.errors.push(`Can not compute perimeter of the shape ${index}. ${e.message}`);
       return false;
     }
 
@@ -507,11 +494,11 @@ async function getFileData(filePath: string, svgPath?: string): Promise<FileData
     mainShape = findMainShape(shapes);
     fileData.area = mainShape.area;
   } catch (e) {
-    fileData.errors.push('Невозможно определить основной контур');
+    fileData.errors.push('Can not define main shape');
     return fileData;
   }
   if (mainShape.skippedIncludesCheck) {
-    fileData.errors.push('Пропущена проверка вхождения контуров в основной конутр');
+    fileData.errors.push('Skipped "all shapes in main shape" check');
   }
   fileData.perimeter = shapes.reduce((acc, val) => acc + val.perimeter, 0);
   fileData.shapes = shapes.map((shape) => ({
@@ -534,8 +521,7 @@ async function getFileData(filePath: string, svgPath?: string): Promise<FileData
 
 const testData = {
   'samples\\sample.dxf': {
-    area: 8980.9356,
-    perimeter: 433.29093377,
+    perimeter: 2713.33190,
   },
   'samples\\sample22.dxf': {
     area: 376751.327972,
@@ -556,9 +542,6 @@ const testData = {
   'samples\\sample2.dxf': {
     area: 646756.568891,
     perimeter:  3349.694679,
-  },
-  'samples\\with_splines.dxf': {
-    splineExists: true,
   },
 };
 
@@ -614,13 +597,13 @@ async function demo() {
       return false;
     }
     if (!shape.polygon.isValid()) {
-      console.log('shape', index, ' is not valid');
+      // TODO: what does it actually mean?
     }
     return true;
   });
   const mainShape = findMainShape(shapes);
 
-  console.log('got main shape, includes check skipped=', !!mainShape.skippedIncludesCheck);
+  console.log('got main shape, includes check skipped=', !!mainShape?.skippedIncludesCheck);
   mainShape.perimeter = mainShape.entities.reduce((acc, val) => {
     return acc + calcEntityLength(val);
   }, 0);
@@ -638,8 +621,8 @@ async function processFile() {
   const dir: string = path.dirname(filePath);
   const fileName: string = path.basename(filePath);
 
-  const data: FileData = await getFileData(filePath, path.join(dir, SVG_FOLDER, fileName));
-  await fs.writeFile(path.join(dir, DATA_FOLDER, fileName), JSON.stringify(data));
+  const data: FileData = await getFileData(filePath, path.join(dir, SVG_FOLDER, fileName.replace('.dxf', '.svg')));
+  await fs.writeFile(path.join(dir, DATA_FOLDER, fileName.replace('.dxf','.json')), JSON.stringify(data));
   console.log('SUCCESS');
 
 }
