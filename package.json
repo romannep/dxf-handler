@@ -6,7 +6,8 @@
   "scripts": {
     "convert": "ts-node src/dxf-handler.ts -f samples/t1.dxf",
     "start": "ts-node src/dxf-handler.ts -test",
-    "test": "ts-node src/dxf-handler.ts -test"
+    "test": "ts-node src/dxf-handler.ts -test",
+    "build": "tsc -p tsconfig.json"
   },
   "repository": {
     "type": "git",
